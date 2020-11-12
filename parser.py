@@ -1,7 +1,7 @@
 import os
 
 import requests
-import json
+import csv
 import time
 import datetime
 from xml.etree import ElementTree
@@ -251,14 +251,17 @@ def remove_expired(session):
 
 
 def load_annotations(data_folder):
-    infile = os.path.join(data_folder,"litcovid2BioCJSON.gz")
-    assert os.path.exists(infile)
-
-    with open_anyfile(infile,mode='r') as file:
-        a = file.read()
-        data_list = json.loads(a)
-        # First item is a comment by provider
-        data = data_list[1]
+    contents = os.listdir(path=data_folder)
+    try:
+        infile = [i for i in contents if '.tsv' in i][0]
+    except IndexError:
+        raise Exception(f"No .tsv found in {contents}")
+    
+    with open(infile, 'r') as litcovid_tsv:
+        tsv_reader = csv.reader(litcovid_tsv, delimiter='\t')
+        for i in range(32):
+            next(tsv_reader)
+        pmids = [line[0] for line in tsv_reader]
 
     doc_id_set = set()
     requests_cache.install_cache('litcovid_cache')
@@ -266,12 +269,12 @@ def load_annotations(data_folder):
     s = requests_cache.CachedSession()
     s.hooks = {'response': throttle}
     logging.debug("requests_cache: %s", requests_cache.get_cache().responses.filename)
-    for i, rec in enumerate(data,start=1):
+    for i, pmid in enumerate(pmids,start=1):
         # NCBI eutils API limits requests to 10/sec
         if i % 100 == 0:
             logging.info("litcovid.parser.load_annotations progress %s", i)
 
-        doc = getPubMedDataFor(rec["pmid"], session=s)
+        doc = getPubMedDataFor(pmid, session=s)
         if doc['_id'] not in doc_id_set:
             yield doc
         doc_id_set.add(doc['_id'])
